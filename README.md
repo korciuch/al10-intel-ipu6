@@ -9,12 +9,14 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/korciuch/ipu6-almalinux.git
+git clone --recurse-submodules https://github.com/korciuch/ipu6-almalinux.git
 sudo bash ipu6-almalinux/setup.sh
 ```
 
-`setup.sh` clones the Intel driver and firmware repos, applies all three patches,
-installs via DKMS, downloads missing VSC firmware, and rebuilds the initramfs.
+The repo includes `intel/ipu6-drivers` and `intel/ipu6-camera-bins` as submodules
+pinned to the tested commits, so you can see exactly what you're installing before
+running anything.  `setup.sh` applies the patches, installs via DKMS, downloads
+the missing VSC firmware, and rebuilds the initramfs.
 Use `--dry-run` to preview all steps without making changes.
 
 ---
@@ -88,34 +90,35 @@ sudo dracut --force
 
 If you prefer not to run the script:
 
-1. **Clone repos**
+1. **Clone repo with submodules**
    ```bash
-   git clone https://github.com/intel/ipu6-drivers.git
-   git clone https://github.com/intel/ipu6-camera-bins.git
-   git clone https://github.com/korciuch/ipu6-almalinux.git
+   git clone --recurse-submodules https://github.com/korciuch/ipu6-almalinux.git
+   cd ipu6-almalinux
    ```
 
-2. **Apply patches**
+2. **Copy to DKMS source tree and apply patches**
    ```bash
-   cd ipu6-drivers
-   git apply ../ipu6-almalinux/patches/0001-dkms-conf-fix-module-array-gaps.patch
-   git apply ../ipu6-almalinux/patches/0002-makefile-guard-ov05c10-v4l2-cci.patch
-   git apply ../ipu6-almalinux/patches/0003-psys-module-import-ns-rhel-compat.patch
+   REPO="$(pwd)"
+   DKMS_VER="$(grep '^PACKAGE_VERSION=' ipu6-drivers/dkms.conf | cut -d= -f2)"
+   sudo rm -rf "/usr/src/ipu6-drivers-${DKMS_VER}"
+   sudo cp -r ipu6-drivers "/usr/src/ipu6-drivers-${DKMS_VER}"
+   sudo rm -f "/usr/src/ipu6-drivers-${DKMS_VER}/.git"
+   for p in patches/0001-* patches/0002-* patches/0003-*; do
+     sudo patch -p1 -d "/usr/src/ipu6-drivers-${DKMS_VER}" < "$REPO/$p"
+   done
    ```
 
 3. **Build and install via DKMS**
    ```bash
-   sudo mkdir -p /usr/src/ipu6-drivers-1.0
-   sudo cp -r . /usr/src/ipu6-drivers-1.0/
-   sudo dkms add ipu6-drivers/1.0
-   sudo dkms build ipu6-drivers/1.0
-   sudo dkms install ipu6-drivers/1.0
+   sudo dkms add "ipu6-drivers/${DKMS_VER}"
+   sudo dkms build "ipu6-drivers/${DKMS_VER}"
+   sudo dkms install "ipu6-drivers/${DKMS_VER}"
    ```
 
 4. **Install IPU6 firmware**
    ```bash
    sudo mkdir -p /lib/firmware/intel/ipu
-   sudo cp ../ipu6-camera-bins/firmware/ipu6epmtl_fw.bin \
+   sudo cp ipu6-camera-bins/lib/firmware/intel/ipu/ipu6epmtl_fw.bin \
        /lib/firmware/intel/ipu/ipu6epmtl_fw.bin
    ```
 
@@ -206,10 +209,12 @@ The quirk is documented here for completeness.
 
 | Item | Version |
 |------|---------|
-| OS | AlmaLinux 10.1 |
+| Hardware | Dell XPS 16 9640 |
+| Firmware | 1.8.0 (2024-08-15) |
+| OS | AlmaLinux 10.1 (Heliotrope Lion) |
 | Kernel | 6.12.0-124.43.1.el10_1.x86_64 |
-| ipu6-drivers | HEAD as of 2026-03-15 |
-| ipu6-camera-bins | HEAD as of 2026-03-15 |
+| ipu6-drivers | da921f7 (2026-03-15) |
+| ipu6-camera-bins | 30e8766 (2026-03-15) |
 | linux-firmware | 20260130-19.3.el10_1 |
 | Sensor | OmniVision OVTI02C1 (ov02c10 driver) |
 

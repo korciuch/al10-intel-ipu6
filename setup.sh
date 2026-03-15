@@ -2,25 +2,22 @@
 # setup.sh — Install Intel IPU6 camera support on AlmaLinux 10.1 / RHEL 10 / kernel 6.12
 # Usage: sudo bash setup.sh [OPTIONS]
 #
+# This script uses the submodules bundled in this repo:
+#   ipu6-drivers/      — intel/ipu6-drivers @ da921f7 (2026-03-15)
+#   ipu6-camera-bins/  — intel/ipu6-camera-bins @ 30e8766 (2026-03-15)
+#
 # Options:
-#   --dry-run          Print all steps without executing anything
-#   --drivers-dir DIR  Use existing ipu6-drivers clone at DIR (skip git clone)
-#   --bins-dir DIR     Use existing ipu6-camera-bins clone at DIR (skip git clone)
+#   --dry-run  Print all steps without executing anything
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN=0
-DRIVERS_DIR=""
-BINS_DIR=""
-WORK_DIR="/tmp/ipu6-setup-$$"
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --dry-run)     DRY_RUN=1; shift ;;
-        --drivers-dir) DRIVERS_DIR="$2"; shift 2 ;;
-        --bins-dir)    BINS_DIR="$2"; shift 2 ;;
+        --dry-run) DRY_RUN=1; shift ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -51,33 +48,43 @@ if [[ "$KVER" != 6.12.* ]]; then
     warn "Proceeding anyway — review patches manually if the build fails."
 fi
 
+# ── Step 1: Install build dependencies ───────────────────────────────────────
+info "Step 1: Install build dependencies"
+run dnf install -y epel-release
+run dnf install -y dkms gcc make kernel-devel-"${KVER}"
+
 # ── Dependency check ──────────────────────────────────────────────────────────
 for cmd in git dkms dracut curl; do
     command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
 done
 
-# ── Setup work directory ──────────────────────────────────────────────────────
-if [[ $DRY_RUN -eq 0 ]]; then
-    mkdir -p "$WORK_DIR"
-    trap 'rm -rf "$WORK_DIR"' EXIT
+# ── Submodule check ───────────────────────────────────────────────────────────
+DRIVERS_DIR="$SCRIPT_DIR/ipu6-drivers"
+BINS_DIR="$SCRIPT_DIR/ipu6-camera-bins"
+
+if [[ ! -f "$DRIVERS_DIR/dkms.conf" || ! -f "$BINS_DIR/lib/firmware/intel/ipu/ipu6epmtl_fw.bin" ]]; then
+    die "Submodules are not initialized. Run:
+    git submodule update --init --recursive"
 fi
 
-# ── Step 1: Clone / locate ipu6-drivers ──────────────────────────────────────
-info "Step 1: Locate ipu6-drivers"
-if [[ -n "$DRIVERS_DIR" ]]; then
-    [[ -d "$DRIVERS_DIR" ]] || die "--drivers-dir '$DRIVERS_DIR' does not exist"
-    info "  Using existing clone: $DRIVERS_DIR"
-    DRIVERS_CLONE="$DRIVERS_DIR"
-else
-    DRIVERS_CLONE="${WORK_DIR}/ipu6-drivers"
-    info "  Cloning intel/ipu6-drivers..."
-    run git clone https://github.com/intel/ipu6-drivers.git "$DRIVERS_CLONE"
-fi
+# Derive DKMS version directly from dkms.conf to stay in sync; strip any quotes
+DKMS_VER="$(grep '^PACKAGE_VERSION=' "$DRIVERS_DIR/dkms.conf" | cut -d= -f2 | tr -d '"'"'")"
+[[ -n "$DKMS_VER" ]] || die "Could not parse PACKAGE_VERSION from dkms.conf"
+DKMS_SRC="/usr/src/ipu6-drivers-${DKMS_VER}"
 
-# ── Step 2: Apply patches ─────────────────────────────────────────────────────
-info "Step 2: Apply AlmaLinux compatibility patches"
+# ── Step 2: Copy submodule to DKMS source tree ───────────────────────────────
+info "Step 2: Copy ipu6-drivers to DKMS source tree (version $DKMS_VER)"
+# Remove any previous build to avoid stale files from prior runs.
+run rm -rf "$DKMS_SRC"
+run mkdir -p "$DKMS_SRC"
+# Exclude .git: the submodule's .git file is a pointer that becomes invalid
+# once relocated to /usr/src; remove it so patch(1) (which needs no repo) is used.
+run cp -r "$DRIVERS_DIR/." "$DKMS_SRC/"
+run rm -f "$DKMS_SRC/.git"
+
+# ── Step 3: Apply patches ─────────────────────────────────────────────────────
+info "Step 3: Apply AlmaLinux compatibility patches"
 PATCHES_DIR="$SCRIPT_DIR/patches"
-[[ -d "$PATCHES_DIR" ]] || die "patches/ directory not found at $PATCHES_DIR"
 
 for patch in \
     "0001-dkms-conf-fix-module-array-gaps.patch" \
@@ -87,62 +94,48 @@ do
     pfile="$PATCHES_DIR/$patch"
     [[ -f "$pfile" ]] || die "Patch not found: $pfile"
     info "  Applying $patch"
-    run git -C "$DRIVERS_CLONE" apply "$pfile"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[dry-run] patch -p1 -d $DKMS_SRC < $pfile"
+    else
+        patch -p1 -d "$DKMS_SRC" < "$pfile"
+    fi
 done
 
-# ── Step 3: Install via DKMS ──────────────────────────────────────────────────
-info "Step 3: Install ipu6-drivers via DKMS"
-DKMS_SRC="/usr/src/ipu6-drivers-1.0"
-run mkdir -p "$DKMS_SRC"
-run cp -r "$DRIVERS_CLONE/." "$DKMS_SRC/"
-run dkms add ipu6-drivers/1.0
-run dkms build ipu6-drivers/1.0
-run dkms install ipu6-drivers/1.0
+# ── Step 4: Install via DKMS ──────────────────────────────────────────────────
+info "Step 4: Install ipu6-drivers via DKMS"
+run dkms add "ipu6-drivers/${DKMS_VER}"
+run dkms build "ipu6-drivers/${DKMS_VER}"
+run dkms install "ipu6-drivers/${DKMS_VER}"
 
-# ── Step 4: Install IPU6 EP MTL firmware ──────────────────────────────────────
-info "Step 4: Install IPU6 EP MTL firmware"
-if [[ -n "$BINS_DIR" ]]; then
-    [[ -d "$BINS_DIR" ]] || die "--bins-dir '$BINS_DIR' does not exist"
-    BINS_CLONE="$BINS_DIR"
-    info "  Using existing clone: $BINS_CLONE"
-else
-    BINS_CLONE="${WORK_DIR}/ipu6-camera-bins"
-    info "  Cloning intel/ipu6-camera-bins..."
-    run git clone https://github.com/intel/ipu6-camera-bins.git "$BINS_CLONE"
-fi
-
-FW_SRC="$BINS_CLONE/firmware/ipu6epmtl_fw.bin"
+# ── Step 5: Install IPU6 EP MTL firmware ──────────────────────────────────────
+info "Step 5: Install IPU6 EP MTL firmware"
+FW_SRC="$BINS_DIR/lib/firmware/intel/ipu/ipu6epmtl_fw.bin"
 FW_DEST="/lib/firmware/intel/ipu/ipu6epmtl_fw.bin"
-if [[ $DRY_RUN -eq 0 && ! -f "$FW_SRC" ]]; then
-    die "Firmware binary not found: $FW_SRC"
-fi
 run mkdir -p /lib/firmware/intel/ipu
 run cp "$FW_SRC" "$FW_DEST"
 info "  Installed: $FW_DEST"
 
-# ── Step 5: Install missing VSC firmware ──────────────────────────────────────
-info "Step 5: Install VSC firmware (missing from AlmaLinux linux-firmware)"
+# ── Step 6: Install VSC firmware ─────────────────────────────────────────────
+info "Step 6: Install VSC firmware"
 run mkdir -p /lib/firmware/intel/vsc
 
 VSC_BASE="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/intel/vsc"
 
-info "  Downloading ivsc_fw.bin (Stage 1 — main VSC firmware)..."
-run curl -fsSL "${VSC_BASE}/ivsc_fw.bin" \
-    -o /lib/firmware/intel/vsc/ivsc_fw.bin
+for fw in \
+    "ivsc_fw.bin" \
+    "ivsc_pkg_ovti02c1_0.bin" \
+    "ivsc_skucfg_ovti02c1_0_1.bin"
+do
+    if [[ $DRY_RUN -eq 0 && -f "/lib/firmware/intel/vsc/${fw}" ]]; then
+        info "  Skipping $fw (already present)"
+        continue
+    fi
+    info "  Downloading $fw..."
+    run curl -fsSL "${VSC_BASE}/${fw}" -o "/lib/firmware/intel/vsc/${fw}"
+done
 
-info "  Downloading ivsc_skucfg_ovti02c1_0_1.bin (Stage 3 — SKU config)..."
-run curl -fsSL "${VSC_BASE}/ivsc_skucfg_ovti02c1_0_1.bin" \
-    -o /lib/firmware/intel/vsc/ivsc_skucfg_ovti02c1_0_1.bin
-
-info "  Note: ivsc_pkg_ovti02c1_0.bin (Stage 2) should already be present"
-info "  in the AlmaLinux linux-firmware package."
-if [[ $DRY_RUN -eq 0 && ! -f /lib/firmware/intel/vsc/ivsc_pkg_ovti02c1_0.bin ]]; then
-    warn "Stage 2 firmware not found: /lib/firmware/intel/vsc/ivsc_pkg_ovti02c1_0.bin"
-    warn "Install the linux-firmware package or download it manually."
-fi
-
-# ── Step 6: Rebuild initramfs ──────────────────────────────────────────────────
-info "Step 6: Rebuild initramfs"
+# ── Step 7: Rebuild initramfs ──────────────────────────────────────────────────
+info "Step 7: Rebuild initramfs"
 run dracut --force
 info "  initramfs rebuilt."
 
