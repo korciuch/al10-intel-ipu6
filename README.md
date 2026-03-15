@@ -220,6 +220,7 @@ The quirk is documented here for completeness.
 | ipu6-drivers | da921f7 (2026-03-15) |
 | ipu6-camera-bins | 30e8766 (2026-03-15) |
 | linux-firmware | 20260130-19.3.el10_1 |
+| glibc | 2.39-58.el10_1.7.alma.1 |
 | Sensor | OmniVision OVTI02C1 (ov02c10 driver) |
 
 RHEL 10 and derivatives using the same kernel should work identically.
