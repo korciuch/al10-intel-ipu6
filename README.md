@@ -1,23 +1,27 @@
-# Intel IPU6 Camera on AlmaLinux 10.1 (Meteor Lake)
+# Intel IPU6 Camera + Audio on AlmaLinux 10.1 (Meteor Lake)
 
-> Fix for camera not working on Intel Meteor Lake laptops running AlmaLinux 10.1 / RHEL 10 / kernel 6.12.
+> Fixes for camera and audio not working on Intel Meteor Lake laptops running AlmaLinux 10.1 / RHEL 10 / kernel 6.12.
 
-**Platform:** Intel Meteor Lake · **Sensor:** OmniVision OVTI02C1 · **Status:** Working as of 2026-03-15
+**Platform:** Intel Meteor Lake · **Tested on:** Dell XPS 16 9640 · **Status:** Working as of 2026-03-15
 
 ---
 
 ## Quick Start
 
 ```bash
-git clone --recurse-submodules https://github.com/korciuch/ipu6-almalinux.git
-sudo bash ipu6-almalinux/setup.sh
+git clone --recurse-submodules https://github.com/korciuch/al10-intel-ipu6.git
+cd al10-intel-ipu6
+
+# Camera (DKMS build + firmware)
+sudo bash setup.sh
+
+# Audio (SOF IPC4 firmware)
+sudo bash audio/setup.sh
 ```
 
 The repo includes `intel/ipu6-drivers` and `intel/ipu6-camera-bins` as submodules
 pinned to the tested commits, so you can see exactly what you're installing before
-running anything.  `setup.sh` applies the patches, installs via DKMS, downloads
-the missing VSC firmware, and rebuilds the initramfs.
-Use `--dry-run` to preview all steps without making changes.
+running anything. Use `--dry-run` on the camera script to preview all steps.
 
 ---
 
