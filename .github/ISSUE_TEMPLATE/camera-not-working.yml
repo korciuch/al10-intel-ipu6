@@ -1,0 +1,61 @@
+name: Camera not working
+description: Report a camera that does not work after following the setup guide
+title: "[camera] <laptop model> — <sensor HID>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill in as much detail as you can.
+        The dmesg output is the most important field.
+
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+      placeholder: "e.g. AlmaLinux 10.1 / Rocky Linux 10.0"
+    validations:
+      required: true
+
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel version
+      placeholder: "uname -r output, e.g. 6.12.0-124.43.1.el10_1.x86_64"
+    validations:
+      required: true
+
+  - type: input
+    id: laptop
+    attributes:
+      label: Laptop model
+      placeholder: "e.g. Lenovo ThinkPad X1 Carbon Gen 12"
+    validations:
+      required: true
+
+  - type: textarea
+    id: dmesg
+    attributes:
+      label: dmesg output
+      description: Run the command below and paste the full output
+      placeholder: |
+        sudo dmesg | grep -E "(ivsc|ipu6|OVTI|INT3472|ipu_bridge|mei_vsc)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: video_devices
+    attributes:
+      label: Video devices
+      description: Output of `ls /dev/video* /dev/media*` (or "no such file" if none exist)
+      placeholder: "ls /dev/video* /dev/media*"
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant (dkms status, firmware files present, etc.)
+    validations:
+      required: false
