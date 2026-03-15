@@ -9,12 +9,14 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/korciuch/ipu6-almalinux.git
+git clone --recurse-submodules https://github.com/korciuch/ipu6-almalinux.git
 sudo bash ipu6-almalinux/setup.sh
 ```
 
-`setup.sh` clones the Intel driver and firmware repos, applies all three patches,
-installs via DKMS, downloads missing VSC firmware, and rebuilds the initramfs.
+The repo includes `intel/ipu6-drivers` and `intel/ipu6-camera-bins` as submodules
+pinned to the tested commits, so you can see exactly what you're installing before
+running anything.  `setup.sh` applies the patches, installs via DKMS, downloads
+the missing VSC firmware, and rebuilds the initramfs.
 Use `--dry-run` to preview all steps without making changes.
 
 ---
@@ -88,19 +90,19 @@ sudo dracut --force
 
 If you prefer not to run the script:
 
-1. **Clone repos**
+1. **Clone repo with submodules**
    ```bash
-   git clone https://github.com/intel/ipu6-drivers.git
-   git clone https://github.com/intel/ipu6-camera-bins.git
-   git clone https://github.com/korciuch/ipu6-almalinux.git
+   git clone --recurse-submodules https://github.com/korciuch/ipu6-almalinux.git
+   cd ipu6-almalinux
    ```
 
 2. **Apply patches**
    ```bash
-   cd ipu6-drivers
-   git apply ../ipu6-almalinux/patches/0001-dkms-conf-fix-module-array-gaps.patch
-   git apply ../ipu6-almalinux/patches/0002-makefile-guard-ov05c10-v4l2-cci.patch
-   git apply ../ipu6-almalinux/patches/0003-psys-module-import-ns-rhel-compat.patch
+   cp -r ipu6-drivers /tmp/ipu6-drivers-patched
+   cd /tmp/ipu6-drivers-patched
+   git apply ~/ipu6-almalinux/patches/0001-dkms-conf-fix-module-array-gaps.patch
+   git apply ~/ipu6-almalinux/patches/0002-makefile-guard-ov05c10-v4l2-cci.patch
+   git apply ~/ipu6-almalinux/patches/0003-psys-module-import-ns-rhel-compat.patch
    ```
 
 3. **Build and install via DKMS**
@@ -115,7 +117,7 @@ If you prefer not to run the script:
 4. **Install IPU6 firmware**
    ```bash
    sudo mkdir -p /lib/firmware/intel/ipu
-   sudo cp ../ipu6-camera-bins/firmware/ipu6epmtl_fw.bin \
+   sudo cp ~/ipu6-almalinux/ipu6-camera-bins/firmware/ipu6epmtl_fw.bin \
        /lib/firmware/intel/ipu/ipu6epmtl_fw.bin
    ```
 

@@ -2,25 +2,22 @@
 # setup.sh — Install Intel IPU6 camera support on AlmaLinux 10.1 / RHEL 10 / kernel 6.12
 # Usage: sudo bash setup.sh [OPTIONS]
 #
+# This script uses the submodules bundled in this repo:
+#   ipu6-drivers/      — intel/ipu6-drivers @ da921f7 (2026-03-15)
+#   ipu6-camera-bins/  — intel/ipu6-camera-bins @ 30e8766 (2026-03-15)
+#
 # Options:
-#   --dry-run          Print all steps without executing anything
-#   --drivers-dir DIR  Use existing ipu6-drivers clone at DIR (skip git clone)
-#   --bins-dir DIR     Use existing ipu6-camera-bins clone at DIR (skip git clone)
+#   --dry-run  Print all steps without executing anything
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN=0
-DRIVERS_DIR=""
-BINS_DIR=""
-WORK_DIR="/tmp/ipu6-setup-$$"
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --dry-run)     DRY_RUN=1; shift ;;
-        --drivers-dir) DRIVERS_DIR="$2"; shift 2 ;;
-        --bins-dir)    BINS_DIR="$2"; shift 2 ;;
+        --dry-run) DRY_RUN=1; shift ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -56,28 +53,29 @@ for cmd in git dkms dracut curl; do
     command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
 done
 
-# ── Setup work directory ──────────────────────────────────────────────────────
+# ── Submodule check ───────────────────────────────────────────────────────────
+DRIVERS_DIR="$SCRIPT_DIR/ipu6-drivers"
+BINS_DIR="$SCRIPT_DIR/ipu6-camera-bins"
+
+if [[ ! -f "$DRIVERS_DIR/dkms.conf" || ! -f "$BINS_DIR/firmware/ipu6epmtl_fw.bin" ]]; then
+    die "Submodules are not initialized. Run:
+    git submodule update --init --recursive"
+fi
+
+# ── Step 1: Prepare a working copy of ipu6-drivers ───────────────────────────
+# We copy to a temp dir so we can apply patches without dirtying the submodule.
+info "Step 1: Prepare ipu6-drivers working copy"
+WORK_DIR="/tmp/ipu6-setup-$$"
 if [[ $DRY_RUN -eq 0 ]]; then
     mkdir -p "$WORK_DIR"
     trap 'rm -rf "$WORK_DIR"' EXIT
 fi
-
-# ── Step 1: Clone / locate ipu6-drivers ──────────────────────────────────────
-info "Step 1: Locate ipu6-drivers"
-if [[ -n "$DRIVERS_DIR" ]]; then
-    [[ -d "$DRIVERS_DIR" ]] || die "--drivers-dir '$DRIVERS_DIR' does not exist"
-    info "  Using existing clone: $DRIVERS_DIR"
-    DRIVERS_CLONE="$DRIVERS_DIR"
-else
-    DRIVERS_CLONE="${WORK_DIR}/ipu6-drivers"
-    info "  Cloning intel/ipu6-drivers..."
-    run git clone https://github.com/intel/ipu6-drivers.git "$DRIVERS_CLONE"
-fi
+DRIVERS_CLONE="$WORK_DIR/ipu6-drivers"
+run cp -r "$DRIVERS_DIR" "$DRIVERS_CLONE"
 
 # ── Step 2: Apply patches ─────────────────────────────────────────────────────
 info "Step 2: Apply AlmaLinux compatibility patches"
 PATCHES_DIR="$SCRIPT_DIR/patches"
-[[ -d "$PATCHES_DIR" ]] || die "patches/ directory not found at $PATCHES_DIR"
 
 for patch in \
     "0001-dkms-conf-fix-module-array-gaps.patch" \
@@ -101,21 +99,8 @@ run dkms install ipu6-drivers/1.0
 
 # ── Step 4: Install IPU6 EP MTL firmware ──────────────────────────────────────
 info "Step 4: Install IPU6 EP MTL firmware"
-if [[ -n "$BINS_DIR" ]]; then
-    [[ -d "$BINS_DIR" ]] || die "--bins-dir '$BINS_DIR' does not exist"
-    BINS_CLONE="$BINS_DIR"
-    info "  Using existing clone: $BINS_CLONE"
-else
-    BINS_CLONE="${WORK_DIR}/ipu6-camera-bins"
-    info "  Cloning intel/ipu6-camera-bins..."
-    run git clone https://github.com/intel/ipu6-camera-bins.git "$BINS_CLONE"
-fi
-
-FW_SRC="$BINS_CLONE/firmware/ipu6epmtl_fw.bin"
+FW_SRC="$BINS_DIR/firmware/ipu6epmtl_fw.bin"
 FW_DEST="/lib/firmware/intel/ipu/ipu6epmtl_fw.bin"
-if [[ $DRY_RUN -eq 0 && ! -f "$FW_SRC" ]]; then
-    die "Firmware binary not found: $FW_SRC"
-fi
 run mkdir -p /lib/firmware/intel/ipu
 run cp "$FW_SRC" "$FW_DEST"
 info "  Installed: $FW_DEST"
