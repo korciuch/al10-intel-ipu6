@@ -48,6 +48,10 @@ if [[ "$KVER" != 6.12.* ]]; then
     warn "Proceeding anyway — review patches manually if the build fails."
 fi
 
+# ── Step 1: Install build dependencies ───────────────────────────────────────
+info "Step 1: Install build dependencies"
+run dnf install -y dkms gcc make kernel-devel-"${KVER}"
+
 # ── Dependency check ──────────────────────────────────────────────────────────
 for cmd in git dkms dracut curl; do
     command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
@@ -57,19 +61,22 @@ done
 DRIVERS_DIR="$SCRIPT_DIR/ipu6-drivers"
 BINS_DIR="$SCRIPT_DIR/ipu6-camera-bins"
 
-if [[ ! -f "$DRIVERS_DIR/dkms.conf" || ! -f "$BINS_DIR/firmware/ipu6epmtl_fw.bin" ]]; then
+if [[ ! -f "$DRIVERS_DIR/dkms.conf" || ! -f "$BINS_DIR/lib/firmware/intel/ipu/ipu6epmtl_fw.bin" ]]; then
     die "Submodules are not initialized. Run:
     git submodule update --init --recursive"
 fi
 
-# ── Step 1: Copy submodule to DKMS source tree ───────────────────────────────
-info "Step 1: Copy ipu6-drivers to DKMS source tree"
-DKMS_SRC="/usr/src/ipu6-drivers-1.0"
+# Derive DKMS version directly from dkms.conf to stay in sync
+DKMS_VER="$(grep '^PACKAGE_VERSION=' "$DRIVERS_DIR/dkms.conf" | cut -d= -f2)"
+DKMS_SRC="/usr/src/ipu6-drivers-${DKMS_VER}"
+
+# ── Step 2: Copy submodule to DKMS source tree ───────────────────────────────
+info "Step 2: Copy ipu6-drivers to DKMS source tree (version $DKMS_VER)"
 run mkdir -p "$DKMS_SRC"
 run cp -r "$DRIVERS_DIR/." "$DKMS_SRC/"
 
-# ── Step 2: Apply patches ─────────────────────────────────────────────────────
-info "Step 2: Apply AlmaLinux compatibility patches"
+# ── Step 3: Apply patches ─────────────────────────────────────────────────────
+info "Step 3: Apply AlmaLinux compatibility patches"
 PATCHES_DIR="$SCRIPT_DIR/patches"
 
 for patch in \
@@ -83,43 +90,37 @@ do
     run git -C "$DKMS_SRC" apply "$pfile"
 done
 
-# ── Step 3: Install via DKMS ──────────────────────────────────────────────────
-info "Step 3: Install ipu6-drivers via DKMS"
-run dkms add ipu6-drivers/1.0
-run dkms build ipu6-drivers/1.0
-run dkms install ipu6-drivers/1.0
+# ── Step 4: Install via DKMS ──────────────────────────────────────────────────
+info "Step 4: Install ipu6-drivers via DKMS"
+run dkms add "ipu6-drivers/${DKMS_VER}"
+run dkms build "ipu6-drivers/${DKMS_VER}"
+run dkms install "ipu6-drivers/${DKMS_VER}"
 
-# ── Step 4: Install IPU6 EP MTL firmware ──────────────────────────────────────
-info "Step 4: Install IPU6 EP MTL firmware"
-FW_SRC="$BINS_DIR/firmware/ipu6epmtl_fw.bin"
+# ── Step 5: Install IPU6 EP MTL firmware ──────────────────────────────────────
+info "Step 5: Install IPU6 EP MTL firmware"
+FW_SRC="$BINS_DIR/lib/firmware/intel/ipu/ipu6epmtl_fw.bin"
 FW_DEST="/lib/firmware/intel/ipu/ipu6epmtl_fw.bin"
 run mkdir -p /lib/firmware/intel/ipu
 run cp "$FW_SRC" "$FW_DEST"
 info "  Installed: $FW_DEST"
 
-# ── Step 5: Install missing VSC firmware ──────────────────────────────────────
-info "Step 5: Install VSC firmware (missing from AlmaLinux linux-firmware)"
+# ── Step 6: Install VSC firmware ─────────────────────────────────────────────
+info "Step 6: Install VSC firmware"
 run mkdir -p /lib/firmware/intel/vsc
 
 VSC_BASE="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/intel/vsc"
 
-info "  Downloading ivsc_fw.bin (Stage 1 — main VSC firmware)..."
-run curl -fsSL "${VSC_BASE}/ivsc_fw.bin" \
-    -o /lib/firmware/intel/vsc/ivsc_fw.bin
+for fw in \
+    "ivsc_fw.bin" \
+    "ivsc_pkg_ovti02c1_0.bin" \
+    "ivsc_skucfg_ovti02c1_0_1.bin"
+do
+    info "  Downloading $fw..."
+    run curl -fsSL "${VSC_BASE}/${fw}" -o "/lib/firmware/intel/vsc/${fw}"
+done
 
-info "  Downloading ivsc_skucfg_ovti02c1_0_1.bin (Stage 3 — SKU config)..."
-run curl -fsSL "${VSC_BASE}/ivsc_skucfg_ovti02c1_0_1.bin" \
-    -o /lib/firmware/intel/vsc/ivsc_skucfg_ovti02c1_0_1.bin
-
-info "  Note: ivsc_pkg_ovti02c1_0.bin (Stage 2) should already be present"
-info "  in the AlmaLinux linux-firmware package."
-if [[ $DRY_RUN -eq 0 && ! -f /lib/firmware/intel/vsc/ivsc_pkg_ovti02c1_0.bin ]]; then
-    warn "Stage 2 firmware not found: /lib/firmware/intel/vsc/ivsc_pkg_ovti02c1_0.bin"
-    warn "Install the linux-firmware package or download it manually."
-fi
-
-# ── Step 6: Rebuild initramfs ──────────────────────────────────────────────────
-info "Step 6: Rebuild initramfs"
+# ── Step 7: Rebuild initramfs ──────────────────────────────────────────────────
+info "Step 7: Rebuild initramfs"
 run dracut --force
 info "  initramfs rebuilt."
 
