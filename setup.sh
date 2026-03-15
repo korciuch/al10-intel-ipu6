@@ -62,16 +62,11 @@ if [[ ! -f "$DRIVERS_DIR/dkms.conf" || ! -f "$BINS_DIR/firmware/ipu6epmtl_fw.bin
     git submodule update --init --recursive"
 fi
 
-# ── Step 1: Prepare a working copy of ipu6-drivers ───────────────────────────
-# We copy to a temp dir so we can apply patches without dirtying the submodule.
-info "Step 1: Prepare ipu6-drivers working copy"
-WORK_DIR="/tmp/ipu6-setup-$$"
-if [[ $DRY_RUN -eq 0 ]]; then
-    mkdir -p "$WORK_DIR"
-    trap 'rm -rf "$WORK_DIR"' EXIT
-fi
-DRIVERS_CLONE="$WORK_DIR/ipu6-drivers"
-run cp -r "$DRIVERS_DIR" "$DRIVERS_CLONE"
+# ── Step 1: Copy submodule to DKMS source tree ───────────────────────────────
+info "Step 1: Copy ipu6-drivers to DKMS source tree"
+DKMS_SRC="/usr/src/ipu6-drivers-1.0"
+run mkdir -p "$DKMS_SRC"
+run cp -r "$DRIVERS_DIR/." "$DKMS_SRC/"
 
 # ── Step 2: Apply patches ─────────────────────────────────────────────────────
 info "Step 2: Apply AlmaLinux compatibility patches"
@@ -85,14 +80,11 @@ do
     pfile="$PATCHES_DIR/$patch"
     [[ -f "$pfile" ]] || die "Patch not found: $pfile"
     info "  Applying $patch"
-    run git -C "$DRIVERS_CLONE" apply "$pfile"
+    run git -C "$DKMS_SRC" apply "$pfile"
 done
 
 # ── Step 3: Install via DKMS ──────────────────────────────────────────────────
 info "Step 3: Install ipu6-drivers via DKMS"
-DKMS_SRC="/usr/src/ipu6-drivers-1.0"
-run mkdir -p "$DKMS_SRC"
-run cp -r "$DRIVERS_CLONE/." "$DKMS_SRC/"
 run dkms add ipu6-drivers/1.0
 run dkms build ipu6-drivers/1.0
 run dkms install ipu6-drivers/1.0
