@@ -72,8 +72,13 @@ DKMS_SRC="/usr/src/ipu6-drivers-${DKMS_VER}"
 
 # ── Step 2: Copy submodule to DKMS source tree ───────────────────────────────
 info "Step 2: Copy ipu6-drivers to DKMS source tree (version $DKMS_VER)"
+# Remove any previous build to avoid stale files from prior runs.
+run rm -rf "$DKMS_SRC"
 run mkdir -p "$DKMS_SRC"
+# Exclude .git: the submodule's .git file is a pointer that becomes invalid
+# once relocated to /usr/src; remove it so patch(1) (which needs no repo) is used.
 run cp -r "$DRIVERS_DIR/." "$DKMS_SRC/"
+run rm -f "$DKMS_SRC/.git"
 
 # ── Step 3: Apply patches ─────────────────────────────────────────────────────
 info "Step 3: Apply AlmaLinux compatibility patches"
@@ -87,7 +92,7 @@ do
     pfile="$PATCHES_DIR/$patch"
     [[ -f "$pfile" ]] || die "Patch not found: $pfile"
     info "  Applying $patch"
-    run git -C "$DKMS_SRC" apply "$pfile"
+    run patch -p1 -d "$DKMS_SRC" < "$pfile"
 done
 
 # ── Step 4: Install via DKMS ──────────────────────────────────────────────────

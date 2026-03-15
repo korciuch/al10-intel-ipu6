@@ -96,22 +96,23 @@ If you prefer not to run the script:
    cd ipu6-almalinux
    ```
 
-2. **Apply patches**
+2. **Copy to DKMS source tree and apply patches**
    ```bash
-   cp -r ipu6-drivers /tmp/ipu6-drivers-patched
-   cd /tmp/ipu6-drivers-patched
-   git apply ~/ipu6-almalinux/patches/0001-dkms-conf-fix-module-array-gaps.patch
-   git apply ~/ipu6-almalinux/patches/0002-makefile-guard-ov05c10-v4l2-cci.patch
-   git apply ~/ipu6-almalinux/patches/0003-psys-module-import-ns-rhel-compat.patch
+   REPO="$(pwd)"
+   DKMS_VER="$(grep '^PACKAGE_VERSION=' ipu6-drivers/dkms.conf | cut -d= -f2)"
+   sudo rm -rf "/usr/src/ipu6-drivers-${DKMS_VER}"
+   sudo cp -r ipu6-drivers "/usr/src/ipu6-drivers-${DKMS_VER}"
+   sudo rm -f "/usr/src/ipu6-drivers-${DKMS_VER}/.git"
+   for p in patches/0001-* patches/0002-* patches/0003-*; do
+     sudo patch -p1 -d "/usr/src/ipu6-drivers-${DKMS_VER}" < "$REPO/$p"
+   done
    ```
 
 3. **Build and install via DKMS**
    ```bash
-   sudo mkdir -p /usr/src/ipu6-drivers-1.0
-   sudo cp -r . /usr/src/ipu6-drivers-1.0/
-   sudo dkms add ipu6-drivers/1.0
-   sudo dkms build ipu6-drivers/1.0
-   sudo dkms install ipu6-drivers/1.0
+   sudo dkms add "ipu6-drivers/${DKMS_VER}"
+   sudo dkms build "ipu6-drivers/${DKMS_VER}"
+   sudo dkms install "ipu6-drivers/${DKMS_VER}"
    ```
 
 4. **Install IPU6 firmware**
