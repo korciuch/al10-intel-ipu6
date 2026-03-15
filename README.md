@@ -118,7 +118,7 @@ If you prefer not to run the script:
 4. **Install IPU6 firmware**
    ```bash
    sudo mkdir -p /lib/firmware/intel/ipu
-   sudo cp ~/ipu6-almalinux/ipu6-camera-bins/firmware/ipu6epmtl_fw.bin \
+   sudo cp ipu6-camera-bins/lib/firmware/intel/ipu/ipu6epmtl_fw.bin \
        /lib/firmware/intel/ipu/ipu6epmtl_fw.bin
    ```
 

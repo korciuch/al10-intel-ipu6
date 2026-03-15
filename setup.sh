@@ -50,6 +50,7 @@ fi
 
 # ── Step 1: Install build dependencies ───────────────────────────────────────
 info "Step 1: Install build dependencies"
+run dnf install -y epel-release
 run dnf install -y dkms gcc make kernel-devel-"${KVER}"
 
 # ── Dependency check ──────────────────────────────────────────────────────────
@@ -66,8 +67,9 @@ if [[ ! -f "$DRIVERS_DIR/dkms.conf" || ! -f "$BINS_DIR/lib/firmware/intel/ipu/ip
     git submodule update --init --recursive"
 fi
 
-# Derive DKMS version directly from dkms.conf to stay in sync
-DKMS_VER="$(grep '^PACKAGE_VERSION=' "$DRIVERS_DIR/dkms.conf" | cut -d= -f2)"
+# Derive DKMS version directly from dkms.conf to stay in sync; strip any quotes
+DKMS_VER="$(grep '^PACKAGE_VERSION=' "$DRIVERS_DIR/dkms.conf" | cut -d= -f2 | tr -d '"'"'")"
+[[ -n "$DKMS_VER" ]] || die "Could not parse PACKAGE_VERSION from dkms.conf"
 DKMS_SRC="/usr/src/ipu6-drivers-${DKMS_VER}"
 
 # ── Step 2: Copy submodule to DKMS source tree ───────────────────────────────
@@ -92,7 +94,11 @@ do
     pfile="$PATCHES_DIR/$patch"
     [[ -f "$pfile" ]] || die "Patch not found: $pfile"
     info "  Applying $patch"
-    run patch -p1 -d "$DKMS_SRC" < "$pfile"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "[dry-run] patch -p1 -d $DKMS_SRC < $pfile"
+    else
+        patch -p1 -d "$DKMS_SRC" < "$pfile"
+    fi
 done
 
 # ── Step 4: Install via DKMS ──────────────────────────────────────────────────
@@ -120,6 +126,10 @@ for fw in \
     "ivsc_pkg_ovti02c1_0.bin" \
     "ivsc_skucfg_ovti02c1_0_1.bin"
 do
+    if [[ $DRY_RUN -eq 0 && -f "/lib/firmware/intel/vsc/${fw}" ]]; then
+        info "  Skipping $fw (already present)"
+        continue
+    fi
     info "  Downloading $fw..."
     run curl -fsSL "${VSC_BASE}/${fw}" -o "/lib/firmware/intel/vsc/${fw}"
 done
