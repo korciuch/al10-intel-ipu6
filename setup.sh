@@ -53,6 +53,31 @@ info "Step 1: Install build dependencies"
 run dnf install -y epel-release
 run dnf install -y dkms gcc make kernel-devel-"${KVER}"
 
+# ── Reboot guard: dkms dependency may pull in a newer kernel ──────────────────
+# If the latest installed kernel-core differs from the running kernel, the DKMS
+# build would target the wrong kernel. Require a reboot first so that Steps 2-7
+# run on the kernel we will actually boot into.
+if [[ $DRY_RUN -eq 0 ]]; then
+    LATEST_KVER=$(rpm -q kernel-core --qf '%{VERSION}-%{RELEASE}.%{ARCH}\n' 2>/dev/null \
+        | sort -V | tail -1)
+    if [[ -n "$LATEST_KVER" && "$LATEST_KVER" != "$KVER" ]]; then
+        echo ""
+        echo "========================================================"
+        echo " A new kernel was installed as a dkms dependency:"
+        echo "   running : $KVER"
+        echo "   latest  : $LATEST_KVER"
+        echo ""
+        echo " Reboot into the new kernel first, then re-run this"
+        echo " script.  The DKMS build must target the kernel you"
+        echo " will actually use."
+        echo ""
+        echo "   reboot"
+        echo "   sudo bash $0"
+        echo "========================================================"
+        exit 0
+    fi
+fi
+
 # ── Dependency check ──────────────────────────────────────────────────────────
 for cmd in git dkms dracut curl; do
     command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
